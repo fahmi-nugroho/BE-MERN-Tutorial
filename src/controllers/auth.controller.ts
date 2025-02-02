@@ -1,6 +1,9 @@
 import {Request, Response} from "express";
 import * as Yup from 'yup';
 import UserModel from "../models/user.model";
+import {encrypt} from "../utils/encryption";
+import {generateToken} from "../utils/jwt";
+import {IReqUser} from "../middlewares/auth.middleware";
 
 type TRegister = {
     fullName: string,
@@ -9,6 +12,11 @@ type TRegister = {
     password: string,
     confirmPassword: string,
 };
+
+type TLogin = {
+    identifier: string,
+    password: string,
+}
 
 const registerValidateSchema = Yup.object({
     fullName: Yup.string().required(),
@@ -29,6 +37,71 @@ export default {
 
             res.status(200).json({
                 message: 'Success registration!',
+                data: result
+            })
+        } catch (error) {
+            const err = error as unknown as Error;
+            res.status(400).json({
+                message: err.message,
+                data: null
+            })
+        }
+    },
+    async login(req: Request, res: Response) {
+        const {identifier, password} = req.body as unknown as TLogin
+        try {
+            // ambil data user berdasarkan "identifier" -> email dan username
+            const userByIdentifier = await UserModel.findOne({
+                $or: [
+                    {
+                        email: identifier,
+                    },
+                    {
+                        username: identifier,
+                    }
+                ]
+            });
+
+            if (!userByIdentifier) {
+                res.status(403).json({
+                    message: 'user not found!',
+                    data: null
+                })
+                return
+            }
+
+            // validasi password
+            const validatePassword: boolean = encrypt(password) === userByIdentifier.password;
+
+            if (!validatePassword) {
+                res.status(403).json({
+                    message: 'user not found!',
+                    data: null
+                })
+                return
+            }
+
+            const token = generateToken({id: userByIdentifier._id, role: userByIdentifier.role})
+
+            res.status(200).json({
+                message: 'Login success',
+                data: token
+            })
+        } catch (error) {
+            const err = error as unknown as Error;
+            res.status(400).json({
+                message: err.message,
+                data: null
+            })
+        }
+    },
+    async me(req: IReqUser, res: Response) {
+        try {
+            const user = req.user
+            const result = await UserModel.findById(user?.id)
+
+            res.status(200).json({
+                message: 'Success get user profile',
                 data: result
             })
         } catch (error) {
